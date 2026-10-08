@@ -32,7 +32,10 @@ export function productWidgetToolMeta() {
   };
 }
 
-export function productWidgetResourceMeta(widgetDomain: string, description: string) {
+export function productWidgetResourceMeta(
+  widgetDomain: string,
+  description: string
+) {
   return {
     ui: {
       prefersBorder: true,
@@ -42,13 +45,19 @@ export function productWidgetResourceMeta(widgetDomain: string, description: str
         resourceDomains: [widgetDomain],
       },
     },
+
     "openai/widgetDescription": description,
+
     "openai/widgetDomain": widgetDomain,
+
     "openai/widgetPrefersBorder": true,
+
     "openai/widgetCSP": {
       connect_domains: [widgetDomain],
       resource_domains: [widgetDomain],
-      redirect_domains: [],
+      redirect_domains: [
+        "checkout.stripe.com",
+      ],
     },
   };
 }
