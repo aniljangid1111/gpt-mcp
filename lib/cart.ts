@@ -41,6 +41,10 @@ type AdminCart = {
 
 const ADMIN_API_URL = process.env.ADMIN_API_URL;
 
+if (!ADMIN_API_URL) {
+  throw new Error("ADMIN_API_URL environment variable is missing");
+}
+
 function mapAdminCart(cart: AdminCart): Cart {
   return {
     id: cart.id,
@@ -77,7 +81,7 @@ export async function getCart(
   cartId: string
 ): Promise<Cart | null> {
   const response = await fetch(
-    `${ADMIN_API_URL}/cart/${cartId}`,
+    `${ADMIN_API_URL}/api/cart/${cartId}`,
     {
       cache: "no-store",
     }
@@ -110,7 +114,7 @@ export async function addToCart({
   }
 
   const response = await fetch(
-    `${ADMIN_API_URL}/cart`,
+    `${ADMIN_API_URL}/api/cart`,
     {
       method: "POST",
       headers: {
@@ -125,16 +129,17 @@ export async function addToCart({
   );
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => null);
+    const errorText = await response.text();
 
     throw new Error(
-      errorData?.message || "Failed to add product to cart"
+      `Admin Cart API failed (${response.status}): ${errorText}`
     );
   }
 
   const data = await response.json();
 
   return mapAdminCart(data.cart);
+
 }
 
 export async function updateCartQuantity({
@@ -154,7 +159,7 @@ export async function updateCartQuantity({
   }
 
   const response = await fetch(
-    `${ADMIN_API_URL}/cart/${cartId}/items/${lineId}`,
+    `${ADMIN_API_URL}/api/cart/${cartId}/items/${lineId}`,
     {
       method: "PATCH",
       headers: {
@@ -188,7 +193,7 @@ export async function removeFromCart({
   lineId: string;
 }): Promise<Cart> {
   const response = await fetch(
-    `${ADMIN_API_URL}/cart/${cartId}/items/${lineId}`,
+    `${ADMIN_API_URL}/api/cart/${cartId}/items/${lineId}`,
     {
       method: "DELETE",
     }
