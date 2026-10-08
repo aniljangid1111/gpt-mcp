@@ -512,7 +512,7 @@ export function createProductWidgetHtml() {
           return;
         }
 
-        const merchandiseId = product.variantGid || product.variantId;
+        const merchandiseId = product.variantId || product.variantGid;
         const cartId = getStoredCartId();
         await callTool("add_to_cart", {
           merchandiseId,
@@ -603,62 +603,292 @@ const productUrl = escapeHtml(product.productUrl || "#");
       }
 
       function renderCart() {
-        if (!currentCart) {
-          return "";
-        }
+  if (!currentCart) {
+    return "";
+  }
 
-        const lines = Array.isArray(currentCart.lines) ? currentCart.lines : [];
-        const checkoutUrl = escapeHtml(currentCart.checkoutUrl || "");
+  const lines = Array.isArray(currentCart.lines)
+    ? currentCart.lines
+    : [];
 
-        return '<section class="shell cart">' +
-          '<div class="header"><div><p class="eyebrow">Cart</p><h1>' + (lines.length ? 'Your cart' : 'Your cart is empty') + '</h1></div></div>' +
-          '<div class="cart-list">' +
-            lines.map((line, index) => {
-              const image = escapeHtml(line.image || "");
-              const title = escapeHtml(line.title);
-              const variant = line.variantTitle && line.variantTitle !== "Default Title" ? escapeHtml(line.variantTitle) : "";
+  return (
+    '<section class="shell cart">' +
+      '<div class="header">' +
+        '<div>' +
+          '<p class="eyebrow">Cart</p>' +
+          '<h1>' +
+            (lines.length ? "Your cart" : "Your cart is empty") +
+          '</h1>' +
+        '</div>' +
+      '</div>' +
 
-              return '<div class="cart-line">' +
-                (image ? '<img class="cart-image" src="' + image + '" alt="' + title + '" />' : '<div class="cart-image"></div>') +
-                '<div><p class="cart-title">' + title + '</p><p class="cart-meta">' + variant + ' ' + money(line.lineTotal) + '</p></div>' +
-                '<div class="quantity">' +
-                  '<button class="cart-button" type="button" data-line-dec="' + index + '">-</button>' +
-                  '<span>' + line.quantity + '</span>' +
-                  '<button class="cart-button" type="button" data-line-inc="' + index + '">+</button>' +
-                  '<button class="cart-button remove-button" type="button" data-line-remove="' + index + '">Remove</button>' +
-                '</div>' +
-              '</div>';
-            }).join("") +
-          '</div>' +
-          '<div class="cart-footer"><span class="cart-total">Total ' + money(currentCart.total) + '</span>' +
-            (checkoutUrl ? '<a class="primary-action" href="' + checkoutUrl + '" target="_blank" rel="noopener noreferrer">Checkout</a>' : '') +
-          '</div>' +
-        '</section>';
-      }
+      '<div class="cart-list">' +
+
+        lines.map((line, index) => {
+          const image = escapeHtml(line.image || "");
+          const title = escapeHtml(line.title);
+
+          const variant =
+            line.variantTitle &&
+            line.variantTitle !== "Default Title"
+              ? escapeHtml(line.variantTitle)
+              : "";
+
+          return (
+            '<div class="cart-line">' +
+
+              (
+                image
+                  ? '<img class="cart-image" src="' +
+                    image +
+                    '" alt="' +
+                    title +
+                    '" />'
+                  : '<div class="cart-image"></div>'
+              ) +
+
+              '<div>' +
+                '<p class="cart-title">' +
+                  title +
+                '</p>' +
+
+                '<p class="cart-meta">' +
+                  variant +
+                  " " +
+                  money(line.lineTotal) +
+                '</p>' +
+              '</div>' +
+
+              '<div class="quantity">' +
+
+                '<button ' +
+                  'class="cart-button" ' +
+                  'type="button" ' +
+                  'data-line-dec="' +
+                  index +
+                  '">' +
+                  "-" +
+                '</button>' +
+
+                '<span>' +
+                  line.quantity +
+                '</span>' +
+
+                '<button ' +
+                  'class="cart-button" ' +
+                  'type="button" ' +
+                  'data-line-inc="' +
+                  index +
+                  '">' +
+                  "+" +
+                '</button>' +
+
+                '<button ' +
+                  'class="cart-button remove-button" ' +
+                  'type="button" ' +
+                  'data-line-remove="' +
+                  index +
+                  '">' +
+                  "Remove" +
+                '</button>' +
+
+              '</div>' +
+
+            '</div>'
+          );
+        }).join("") +
+
+      '</div>' +
+
+      '<div class="cart-footer">' +
+
+        '<span class="cart-total">' +
+          "Total " +
+          money(currentCart.total) +
+        '</span>' +
+
+        (
+          lines.length
+            ? '<button ' +
+                'class="action-button primary-action" ' +
+                'type="button" ' +
+                'data-checkout-cart>' +
+                "Checkout" +
+              '</button>'
+            : ""
+        ) +
+
+      '</div>' +
+
+    '</section>'
+  );
+}
 
       function bindActions() {
-        for (const button of root.querySelectorAll("button[data-add-index]")) {
-          button.addEventListener("click", () => addProductToCart(Number(button.dataset.addIndex)));
-        }
+  // Add to Cart
+  for (const button of root.querySelectorAll(
+    "button[data-add-index]"
+  )) {
+    button.addEventListener("click", async () => {
+      try {
+        button.disabled = true;
+        button.textContent = "Adding...";
 
-        for (const button of root.querySelectorAll("button[data-line-inc]")) {
-          button.addEventListener("click", () => {
-            const line = currentCart?.lines?.[Number(button.dataset.lineInc)];
-            if (line) updateLine(Number(button.dataset.lineInc), line.quantity + 1);
-          });
-        }
-
-        for (const button of root.querySelectorAll("button[data-line-dec]")) {
-          button.addEventListener("click", () => {
-            const line = currentCart?.lines?.[Number(button.dataset.lineDec)];
-            if (line) updateLine(Number(button.dataset.lineDec), line.quantity - 1);
-          });
-        }
-
-        for (const button of root.querySelectorAll("button[data-line-remove]")) {
-          button.addEventListener("click", () => removeLine(Number(button.dataset.lineRemove)));
-        }
+        await addProductToCart(
+          Number(button.dataset.addIndex)
+        );
+      } catch (error) {
+        console.error("Add to cart error:", error);
+      } finally {
+        button.disabled = false;
+        button.textContent = "Add to Cart";
       }
+    });
+  }
+
+  // Increase quantity
+  for (const button of root.querySelectorAll(
+    "button[data-line-inc]"
+  )) {
+    button.addEventListener("click", async () => {
+      const index = Number(button.dataset.lineInc);
+      const line = currentCart?.lines?.[index];
+
+      if (!line || !currentCart?.id) {
+        return;
+      }
+
+      try {
+        button.disabled = true;
+
+        await updateLine(
+          index,
+          line.quantity + 1
+        );
+      } catch (error) {
+        console.error(
+          "Increase quantity error:",
+          error
+        );
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
+  // Decrease quantity
+  for (const button of root.querySelectorAll(
+    "button[data-line-dec]"
+  )) {
+    button.addEventListener("click", async () => {
+      const index = Number(button.dataset.lineDec);
+      const line = currentCart?.lines?.[index];
+
+      if (!line || !currentCart?.id) {
+        return;
+      }
+
+      try {
+        button.disabled = true;
+
+        await updateLine(
+          index,
+          line.quantity - 1
+        );
+      } catch (error) {
+        console.error(
+          "Decrease quantity error:",
+          error
+        );
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
+  // Remove item
+  for (const button of root.querySelectorAll(
+    "button[data-line-remove]"
+  )) {
+    button.addEventListener("click", async () => {
+      const index = Number(
+        button.dataset.lineRemove
+      );
+
+      const line = currentCart?.lines?.[index];
+
+      if (!line || !currentCart?.id) {
+        return;
+      }
+
+      try {
+        button.disabled = true;
+        button.textContent = "Removing...";
+
+        await removeLine(index);
+      } catch (error) {
+        console.error(
+          "Remove cart item error:",
+          error
+        );
+
+        button.disabled = false;
+        button.textContent = "Remove";
+      }
+    });
+  }
+
+  // Checkout
+  for (const button of root.querySelectorAll(
+    "button[data-checkout-cart]"
+  )) {
+    button.addEventListener("click", async () => {
+      if (!currentCart?.id) {
+        return;
+      }
+
+      try {
+        button.disabled = true;
+        button.textContent = "Opening Stripe...";
+
+        const result = await callTool(
+          "checkout_cart",
+          {
+            cartId: currentCart.id,
+          }
+        );
+
+        const url =
+          result?.structuredContent?.url ||
+          result?.url ||
+          result?._meta?.url;
+
+        if (!url) {
+          throw new Error(
+            "Stripe checkout URL was not returned."
+          );
+        }
+
+        if (window.openai?.openExternal) {
+          await window.openai.openExternal({
+            href: url,
+            redirectUrl: false,
+          });
+        } else {
+          window.location.href = url;
+        }
+      } catch (error) {
+        console.error(
+          "Stripe checkout error:",
+          error
+        );
+
+        button.disabled = false;
+        button.textContent = "Checkout";
+      }
+    });
+  }
+}
 
       function renderProductsAndCart() {
         const products = currentProducts;

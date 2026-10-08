@@ -124,6 +124,15 @@ const removeFromCartSchema = z.object({
   lineId: z.string().describe("The cart line ID to remove."),
 });
 
+const checkoutCartSchema = z.object({
+  cartId: z.string().describe("The cart ID to checkout."),
+});
+
+const checkoutOutputSchema = z.object({
+  success: z.boolean(),
+  url: z.string(),
+});
+
 const productOutputSchema = z.object({
   count: z.number(),
   label: z.string(),
@@ -489,6 +498,68 @@ const handler = createMcpHandler(
           cart,
           `Removed item from cart. Cart now has ${cart.totalQuantity} item${cart.totalQuantity === 1 ? "" : "s"}.`
         );
+      }
+    );
+
+    server.registerTool(
+      "checkout_cart",
+      {
+        title: "Checkout Cart",
+        description:
+          "Create a Stripe Checkout session for the current cart and return the Stripe payment URL.",
+        inputSchema: checkoutCartSchema,
+        outputSchema: checkoutOutputSchema,
+        annotations: {
+          readOnlyHint: false,
+        },
+        _meta: {
+          ...widgetMeta,
+          "openai/widgetAccessible": true,
+        },
+      },
+      async (args) => {
+        const adminApiUrl = process.env.ADMIN_API_URL;
+
+        if (!adminApiUrl) {
+          throw new Error(
+            "ADMIN_API_URL environment variable is missing"
+          );
+        }
+
+        const response = await fetch(
+          `${adminApiUrl}/api/stripe/checkout`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              cartId: args.cartId as string,
+            }),
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+            "Failed to create Stripe checkout session"
+          );
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Stripe checkout is ready.",
+            },
+          ],
+          structuredContent: {
+            success: true,
+            url: data.url,
+          },
+        };
       }
     );
 
