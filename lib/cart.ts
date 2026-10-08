@@ -48,7 +48,7 @@ if (!ADMIN_API_URL) {
 function mapAdminCart(cart: AdminCart): Cart {
   return {
     id: cart.id,
-    checkoutUrl: `/checkout?cart=${cart.id}`,
+    checkoutUrl: `${process.env.MCP_BASE_URL}/checkout?cart=${cart.id}`,
     totalQuantity: cart.totalQuantity,
     total: String(cart.total),
     currencyCode: cart.currencyCode,
