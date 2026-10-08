@@ -1,3 +1,5 @@
+import fs from "fs/promises";
+import path from "path";
 import productsData from "@/data/products.json";
 
 export type CartLine = {
@@ -22,7 +24,7 @@ export type Cart = {
   lines: CartLine[];
 };
 
-
+const cartsFilePath = path.join(process.cwd(), "data", "carts.json");
 
 function generateId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random()
@@ -30,15 +32,26 @@ function generateId(prefix: string) {
     .substring(2, 9)}`;
 }
 
-const cartsStore: Cart[] = [];
-
 async function readCarts(): Promise<Cart[]> {
-  return cartsStore;
+  try {
+    const file = await fs.readFile(cartsFilePath, "utf-8");
+
+    if (!file.trim()) {
+      return [];
+    }
+
+    return JSON.parse(file) as Cart[];
+  } catch {
+    return [];
+  }
 }
 
 async function writeCarts(carts: Cart[]) {
-  cartsStore.length = 0;
-  cartsStore.push(...carts);
+  await fs.writeFile(
+    cartsFilePath,
+    JSON.stringify(carts, null, 2),
+    "utf-8"
+  );
 }
 
 function findProduct(merchandiseId: string) {
