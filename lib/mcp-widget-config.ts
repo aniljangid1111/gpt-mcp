@@ -9,7 +9,7 @@ export function getAppOrigin() {
     process.env.VERCEL_URL;
 
   if (!configuredOrigin) {
-    return "http://localhost:3000";
+    return `${process.env.ADMIN_API_URL}`;
   }
 
   const origin = configuredOrigin.startsWith("http")

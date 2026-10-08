@@ -1,7 +1,3 @@
-import fs from "fs/promises";
-import path from "path";
-import productsData from "@/data/products.json";
-
 export type CartLine = {
   id: string;
   merchandiseId: string;
@@ -24,83 +20,80 @@ export type Cart = {
   lines: CartLine[];
 };
 
-const cartsFilePath = path.join(process.cwd(), "data", "carts.json");
-
-function generateId(prefix: string) {
-  return `${prefix}_${Date.now()}_${Math.random()
-    .toString(36)
-    .substring(2, 9)}`;
-}
-
-async function readCarts(): Promise<Cart[]> {
-  try {
-    const file = await fs.readFile(cartsFilePath, "utf-8");
-
-    if (!file.trim()) {
-      return [];
-    }
-
-    return JSON.parse(file) as Cart[];
-  } catch {
-    return [];
-  }
-}
-
-async function writeCarts(carts: Cart[]) {
-  await fs.writeFile(
-    cartsFilePath,
-    JSON.stringify(carts, null, 2),
-    "utf-8"
-  );
-}
-
-function findProduct(merchandiseId: string) {
-  return productsData.find(
-    (product) =>
-      product.id === merchandiseId ||
-      `local:${product.id}` === merchandiseId
-  );
-}
-
-function createCart(): Cart {
-  const id = generateId("cart");
-
-  return {
-    id,
-    checkoutUrl: `/checkout?cart=${id}`,
-    totalQuantity: 0,
-    total: "0.00",
-    currencyCode: "INR",
-    lines: [],
+type AdminCartItem = {
+  id: string;
+  quantity: number;
+  price: string;
+  product: {
+    id: string;
+    name: string;
+    imageUrl: string | null;
   };
-}
+};
 
-function calculateCart(cart: Cart): Cart {
-  const totalQuantity = cart.lines.reduce(
-    (total, line) => total + line.quantity,
-    0
-  );
+type AdminCart = {
+  id: string;
+  currencyCode: string;
+  total: string;
+  totalQuantity: number;
+  items: AdminCartItem[];
+};
 
-  const total = cart.lines
-    .reduce(
-      (sum, line) => sum + Number(line.price) * line.quantity,
-      0
-    )
-    .toFixed(2);
+const ADMIN_API_URL = process.env.ADMIN_API_URL;
 
+function mapAdminCart(cart: AdminCart): Cart {
   return {
-    ...cart,
-    totalQuantity,
-    total,
+    id: cart.id,
+    checkoutUrl: `/checkout?cart=${cart.id}`,
+    totalQuantity: cart.totalQuantity,
+    total: String(cart.total),
+    currencyCode: cart.currencyCode,
+
+    lines: cart.items.map((item) => {
+      const handle = item.product.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+
+      return {
+        id: item.id,
+        merchandiseId: item.product.id,
+        title: item.product.name,
+        variantTitle: "Default",
+        handle,
+        image: item.product.imageUrl || "",
+        quantity: item.quantity,
+        price: String(item.price),
+        lineTotal: (
+          Number(item.price) * item.quantity
+        ).toFixed(2),
+        currencyCode: cart.currencyCode,
+      };
+    }),
   };
 }
 
 export async function getCart(
   cartId: string
 ): Promise<Cart | null> {
-  const carts = await readCarts();
+  const response = await fetch(
+    `${ADMIN_API_URL}/cart/${cartId}`,
+    {
+      cache: "no-store",
+    }
+  );
 
-  return carts.find((cart) => cart.id === cartId) ?? null;
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch cart from Admin API");
+  }
+
+  const data = await response.json();
+
+  return mapAdminCart(data.cart);
 }
 
 export async function addToCart({
@@ -116,68 +109,32 @@ export async function addToCart({
     throw new Error("Quantity must be greater than 0.");
   }
 
-  const product = findProduct(merchandiseId);
+  const response = await fetch(
+    `${ADMIN_API_URL}/cart`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        cartId,
+        productId: merchandiseId,
+        quantity,
+      }),
+    }
+  );
 
-  if (!product) {
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+
     throw new Error(
-      `Product not found for merchandiseId: ${merchandiseId}`
+      errorData?.message || "Failed to add product to cart"
     );
   }
 
-  const carts = await readCarts();
+  const data = await response.json();
 
-  let cart = cartId
-    ? carts.find((item) => item.id === cartId)
-    : undefined;
-
-  if (!cart) {
-    cart = createCart();
-    carts.push(cart);
-  }
-
-  const existingLine = cart.lines.find(
-    (line) => line.merchandiseId === product.id
-  );
-
-  if (existingLine) {
-    existingLine.quantity += quantity;
-
-    existingLine.lineTotal = (
-      Number(existingLine.price) * existingLine.quantity
-    ).toFixed(2);
-  } else {
-    const price = Number(product.price).toFixed(2);
-
-    const line: CartLine = {
-      id: generateId("line"),
-      merchandiseId: product.id,
-      title: product.title,
-      variantTitle: "Default",
-      handle: product.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, ""),
-      image: product.image,
-      quantity,
-      price,
-      lineTotal: (Number(price) * quantity).toFixed(2),
-      currencyCode: product.currency ?? "INR",
-    };
-
-    cart.lines.push(line);
-  }
-
-  const updatedCart = calculateCart(cart);
-
-  const cartIndex = carts.findIndex(
-    (item) => item.id === updatedCart.id
-  );
-
-  carts[cartIndex] = updatedCart;
-
-  await writeCarts(carts);
-
-  return updatedCart;
+  return mapAdminCart(data.cart);
 }
 
 export async function updateCartQuantity({
@@ -189,14 +146,6 @@ export async function updateCartQuantity({
   lineId: string;
   quantity: number;
 }): Promise<Cart> {
-  const carts = await readCarts();
-
-  const cart = carts.find((item) => item.id === cartId);
-
-  if (!cart) {
-    throw new Error(`Cart not found: ${cartId}`);
-  }
-
   if (quantity <= 0) {
     return removeFromCart({
       cartId,
@@ -204,31 +153,31 @@ export async function updateCartQuantity({
     });
   }
 
-  const line = cart.lines.find(
-    (item) => item.id === lineId
+  const response = await fetch(
+    `${ADMIN_API_URL}/cart/${cartId}/items/${lineId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        quantity,
+      }),
+    }
   );
 
-  if (!line) {
-    throw new Error(`Cart line not found: ${lineId}`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+
+    throw new Error(
+      errorData?.message ||
+      "Failed to update cart quantity"
+    );
   }
 
-  line.quantity = quantity;
+  const data = await response.json();
 
-  line.lineTotal = (
-    Number(line.price) * quantity
-  ).toFixed(2);
-
-  const updatedCart = calculateCart(cart);
-
-  const cartIndex = carts.findIndex(
-    (item) => item.id === updatedCart.id
-  );
-
-  carts[cartIndex] = updatedCart;
-
-  await writeCarts(carts);
-
-  return updatedCart;
+  return mapAdminCart(data.cart);
 }
 
 export async function removeFromCart({
@@ -238,35 +187,23 @@ export async function removeFromCart({
   cartId: string;
   lineId: string;
 }): Promise<Cart> {
-  const carts = await readCarts();
+  const response = await fetch(
+    `${ADMIN_API_URL}/cart/${cartId}/items/${lineId}`,
+    {
+      method: "DELETE",
+    }
+  );
 
-  const cart = carts.find((item) => item.id === cartId);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
 
-  if (!cart) {
-    throw new Error(`Cart not found: ${cartId}`);
+    throw new Error(
+      errorData?.message ||
+      "Failed to remove product from cart"
+    );
   }
 
-  const lineExists = cart.lines.some(
-    (line) => line.id === lineId
-  );
+  const data = await response.json();
 
-  if (!lineExists) {
-    throw new Error(`Cart line not found: ${lineId}`);
-  }
-
-  cart.lines = cart.lines.filter(
-    (line) => line.id !== lineId
-  );
-
-  const updatedCart = calculateCart(cart);
-
-  const cartIndex = carts.findIndex(
-    (item) => item.id === updatedCart.id
-  );
-
-  carts[cartIndex] = updatedCart;
-
-  await writeCarts(carts);
-
-  return updatedCart;
+  return mapAdminCart(data.cart);
 }

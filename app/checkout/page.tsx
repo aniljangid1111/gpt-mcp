@@ -1,6 +1,7 @@
 import { getCart } from "@/lib/cart";
 import StripeButton from "./StripeButton";
 
+
 type CheckoutPageProps = {
   searchParams: Promise<{
     cart?: string;
@@ -56,16 +57,34 @@ export default async function CheckoutPage({
               borderBottom: "1px solid #ddd",
             }}
           >
-            <img
-              src={line.image}
-              alt={line.title}
-              width={80}
-              height={80}
-              style={{
-                objectFit: "cover",
-                borderRadius: 8,
-              }}
-            />
+            {line.image ? (
+              <img
+                src={line.image}
+                alt={line.title}
+                width={80}
+                height={80}
+                style={{
+                  objectFit: "cover",
+                  borderRadius: 8,
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 80,
+                  height: 80,
+                  borderRadius: 8,
+                  background: "#eee",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 12,
+                  color: "#666",
+                }}
+              >
+                No Image
+              </div>
+            )}
 
             <div style={{ flex: 1 }}>
               <h3 style={{ margin: 0 }}>

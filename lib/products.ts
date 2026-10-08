@@ -1,4 +1,3 @@
-import productsData from "@/data/products.json";
 
 export type Product = {
   id: string;
@@ -16,24 +15,33 @@ export type Product = {
   variantGid: string;
 };
 
-function mapLocalProduct(product: (typeof productsData)[number]): Product {
-  const handle = product.title
+type AdminProduct = {
+  id: string;
+  name: string;
+  price: string | number;
+  imageUrl: string | null;
+  content: string;
+  documentUrl: string | null;
+};
+
+function mapAdminProduct(product: AdminProduct): Product {
+  const handle = product.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 
   return {
     id: product.id,
-    title: product.title,
-    description: product.description,
-    brand: product.brand,
-    tags: product.tags,
-    image: product.image,
-    images: [product.image],
+    title: product.name,
+    description: product.content,
+    brand: "Cleanergy",
+    tags: [],
+    image: product.imageUrl || "",
+    images: product.imageUrl ? [product.imageUrl] : [],
     price: String(product.price),
     handle,
-    productUrl: product.url,
-    checkoutUrl: product.url,
+    productUrl: `/products/${handle}`,
+    checkoutUrl: `/products/${handle}`,
     variantId: product.id,
     variantGid: `local:${product.id}`,
   };
@@ -72,7 +80,21 @@ export function isCatalogWideQuery(query?: string): boolean {
 }
 
 export async function listAllProducts(limit = 50): Promise<Product[]> {
-  return productsData.slice(0, limit).map(mapLocalProduct);
+  const response = await fetch(`${process.env.ADMIN_API_URL}/api/products`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch products from Admin API");
+  }
+
+  const data = await response.json();
+
+  const products: AdminProduct[] = data.products || [];
+
+  return products
+    .slice(0, limit)
+    .map(mapAdminProduct);
 }
 
 export async function searchProducts(
@@ -81,16 +103,18 @@ export async function searchProducts(
 ): Promise<Product[]> {
   const query = search.trim().toLowerCase();
 
+  const allProducts = await listAllProducts(50);
+
   if (!query) {
-    return listAllProducts(limit);
+    return allProducts.slice(0, limit);
   }
 
-  const products = productsData.filter((product) => {
+  const products = allProducts.filter((product) => {
     const searchableText = [
       product.title,
       product.description,
       product.brand,
-      product.category,
+      product.handle,
       ...product.tags,
     ]
       .join(" ")
@@ -99,7 +123,7 @@ export async function searchProducts(
     return searchableText.includes(query);
   });
 
-  return products.slice(0, limit).map(mapLocalProduct);
+  return products.slice(0, limit);
 }
 
 export async function getProducts(query?: string): Promise<Product[]> {
