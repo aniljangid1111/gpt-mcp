@@ -1,3 +1,5 @@
+import fs from "fs/promises";
+import path from "path";
 import productsData from "@/data/products.json";
 
 export type CartLine = {
@@ -22,20 +24,34 @@ export type Cart = {
   lines: CartLine[];
 };
 
-type LocalCart = Cart;
-
-/**
- * Temporary in-memory carts.
- *
- * This is only for MCP/local testing.
- * Server restart/reload can clear the carts.
- */
-const carts = new Map<string, LocalCart>();
+const cartsFilePath = path.join(process.cwd(), "data", "carts.json");
 
 function generateId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random()
     .toString(36)
     .substring(2, 9)}`;
+}
+
+async function readCarts(): Promise<Cart[]> {
+  try {
+    const file = await fs.readFile(cartsFilePath, "utf-8");
+
+    if (!file.trim()) {
+      return [];
+    }
+
+    return JSON.parse(file) as Cart[];
+  } catch {
+    return [];
+  }
+}
+
+async function writeCarts(carts: Cart[]) {
+  await fs.writeFile(
+    cartsFilePath,
+    JSON.stringify(carts, null, 2),
+    "utf-8"
+  );
 }
 
 function findProduct(merchandiseId: string) {
@@ -49,7 +65,7 @@ function findProduct(merchandiseId: string) {
 function createCart(): Cart {
   const id = generateId("cart");
 
-  const cart: Cart = {
+  return {
     id,
     checkoutUrl: `/checkout?cart=${id}`,
     totalQuantity: 0,
@@ -57,10 +73,6 @@ function createCart(): Cart {
     currencyCode: "INR",
     lines: [],
   };
-
-  carts.set(id, cart);
-
-  return cart;
 }
 
 function calculateCart(cart: Cart): Cart {
@@ -71,8 +83,7 @@ function calculateCart(cart: Cart): Cart {
 
   const total = cart.lines
     .reduce(
-      (sum, line) =>
-        sum + Number(line.price) * line.quantity,
+      (sum, line) => sum + Number(line.price) * line.quantity,
       0
     )
     .toFixed(2);
@@ -87,7 +98,9 @@ function calculateCart(cart: Cart): Cart {
 export async function getCart(
   cartId: string
 ): Promise<Cart | null> {
-  return carts.get(cartId) ?? null;
+  const carts = await readCarts();
+
+  return carts.find((cart) => cart.id === cartId) ?? null;
 }
 
 export async function addToCart({
@@ -111,23 +124,26 @@ export async function addToCart({
     );
   }
 
-  let cart = cartId ? carts.get(cartId) : undefined;
+  const carts = await readCarts();
+
+  let cart = cartId
+    ? carts.find((item) => item.id === cartId)
+    : undefined;
 
   if (!cart) {
     cart = createCart();
+    carts.push(cart);
   }
 
   const existingLine = cart.lines.find(
-    (line) =>
-      line.merchandiseId === product.id
+    (line) => line.merchandiseId === product.id
   );
 
   if (existingLine) {
     existingLine.quantity += quantity;
 
     existingLine.lineTotal = (
-      Number(existingLine.price) *
-      existingLine.quantity
+      Number(existingLine.price) * existingLine.quantity
     ).toFixed(2);
   } else {
     const price = Number(product.price).toFixed(2);
@@ -144,9 +160,7 @@ export async function addToCart({
       image: product.image,
       quantity,
       price,
-      lineTotal: (
-        Number(price) * quantity
-      ).toFixed(2),
+      lineTotal: (Number(price) * quantity).toFixed(2),
       currencyCode: product.currency ?? "INR",
     };
 
@@ -155,7 +169,13 @@ export async function addToCart({
 
   const updatedCart = calculateCart(cart);
 
-  carts.set(updatedCart.id, updatedCart);
+  const cartIndex = carts.findIndex(
+    (item) => item.id === updatedCart.id
+  );
+
+  carts[cartIndex] = updatedCart;
+
+  await writeCarts(carts);
 
   return updatedCart;
 }
@@ -169,7 +189,9 @@ export async function updateCartQuantity({
   lineId: string;
   quantity: number;
 }): Promise<Cart> {
-  const cart = carts.get(cartId);
+  const carts = await readCarts();
+
+  const cart = carts.find((item) => item.id === cartId);
 
   if (!cart) {
     throw new Error(`Cart not found: ${cartId}`);
@@ -183,13 +205,11 @@ export async function updateCartQuantity({
   }
 
   const line = cart.lines.find(
-    (line) => line.id === lineId
+    (item) => item.id === lineId
   );
 
   if (!line) {
-    throw new Error(
-      `Cart line not found: ${lineId}`
-    );
+    throw new Error(`Cart line not found: ${lineId}`);
   }
 
   line.quantity = quantity;
@@ -200,7 +220,13 @@ export async function updateCartQuantity({
 
   const updatedCart = calculateCart(cart);
 
-  carts.set(updatedCart.id, updatedCart);
+  const cartIndex = carts.findIndex(
+    (item) => item.id === updatedCart.id
+  );
+
+  carts[cartIndex] = updatedCart;
+
+  await writeCarts(carts);
 
   return updatedCart;
 }
@@ -212,7 +238,9 @@ export async function removeFromCart({
   cartId: string;
   lineId: string;
 }): Promise<Cart> {
-  const cart = carts.get(cartId);
+  const carts = await readCarts();
+
+  const cart = carts.find((item) => item.id === cartId);
 
   if (!cart) {
     throw new Error(`Cart not found: ${cartId}`);
@@ -223,9 +251,7 @@ export async function removeFromCart({
   );
 
   if (!lineExists) {
-    throw new Error(
-      `Cart line not found: ${lineId}`
-    );
+    throw new Error(`Cart line not found: ${lineId}`);
   }
 
   cart.lines = cart.lines.filter(
@@ -234,7 +260,13 @@ export async function removeFromCart({
 
   const updatedCart = calculateCart(cart);
 
-  carts.set(updatedCart.id, updatedCart);
+  const cartIndex = carts.findIndex(
+    (item) => item.id === updatedCart.id
+  );
+
+  carts[cartIndex] = updatedCart;
+
+  await writeCarts(carts);
 
   return updatedCart;
 }
