@@ -1,4 +1,5 @@
 import { getCart } from "@/lib/cart";
+import StripeButton from "./StripeButton";
 
 type CheckoutPageProps = {
   searchParams: Promise<{
@@ -60,12 +61,19 @@ export default async function CheckoutPage({
               alt={line.title}
               width={80}
               height={80}
-              style={{ objectFit: "cover", borderRadius: 8 }}
+              style={{
+                objectFit: "cover",
+                borderRadius: 8,
+              }}
             />
 
             <div style={{ flex: 1 }}>
-              <h3 style={{ margin: 0 }}>{line.title}</h3>
+              <h3 style={{ margin: 0 }}>
+                {line.title}
+              </h3>
+
               <p>Quantity: {line.quantity}</p>
+
               <p>${line.lineTotal}</p>
             </div>
           </div>
@@ -75,21 +83,7 @@ export default async function CheckoutPage({
       <div style={{ marginTop: 30 }}>
         <h2>Total: ${cart.total}</h2>
 
-        <button
-          type="button"
-          style={{
-            width: "100%",
-            padding: "14px 20px",
-            border: "none",
-            borderRadius: 8,
-            background: "#000",
-            color: "#fff",
-            fontSize: 16,
-            cursor: "pointer",
-          }}
-        >
-          Pay with Stripe
-        </button>
+        <StripeButton cartId={cart.id} />
       </div>
     </main>
   );
