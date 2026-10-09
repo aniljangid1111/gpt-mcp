@@ -642,7 +642,10 @@ const handler = createMcpHandler(
           message,
           total,
           currency,
-          items: order.items.map((item) => ({
+          items: order.items.map((item: {
+            productName: string;
+            quantity: number;
+          }) => ({
             name: item.productName,
             quantity: item.quantity,
           })),
