@@ -133,6 +133,27 @@ const checkoutOutputSchema = z.object({
   url: z.string(),
 });
 
+
+const verifyPaymentSchema = z.object({
+  orderId: z.string().describe("The Cleanergy order ID returned during checkout."),
+  sessionId: z.string().describe("The Stripe Checkout Session ID from the return URL."),
+});
+
+const verifyPaymentOutputSchema = z.object({
+  success: z.boolean(),
+  status: z.string(),
+  orderId: z.string(),
+  message: z.string(),
+  total: z.string(),
+  currency: z.string(),
+  items: z.array(
+    z.object({
+      name: z.string(),
+      quantity: z.number(),
+    })
+  ),
+});
+
 const productOutputSchema = z.object({
   count: z.number(),
   label: z.string(),
@@ -559,6 +580,77 @@ const handler = createMcpHandler(
             success: true,
             url: data.url,
           },
+        };
+      }
+    );
+
+
+    server.registerTool(
+      "verify_payment",
+      {
+        title: "Verify Payment",
+        description:
+          "Verify a Cleanergy Battery order using its order ID and Stripe Checkout Session ID. Use this after checkout to confirm whether payment was successful, pending, or unsuccessful.",
+        inputSchema: verifyPaymentSchema,
+        outputSchema: verifyPaymentOutputSchema,
+        annotations: {
+          readOnlyHint: true,
+        },
+        _meta: widgetMeta,
+      },
+      async (args) => {
+        const adminApiUrl = process.env.ADMIN_API_URL;
+
+        if (!adminApiUrl) {
+          throw new Error("ADMIN_API_URL environment variable is missing");
+        }
+
+        const query = new URLSearchParams({
+          orderId: args.orderId,
+          session_id: args.sessionId,
+        });
+
+        const response = await fetch(
+          `${adminApiUrl}/api/orders/verify?${query.toString()}`,
+          { cache: "no-store" }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success || !data.order) {
+          throw new Error(data.error || "Unable to verify payment");
+        }
+
+        const order = data.order;
+        const currency = String(order.currency || "usd").toUpperCase();
+        const total = new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency,
+        }).format(Number(order.totalAmount) / 100);
+
+        const message =
+          data.status === "PAID"
+            ? `Payment confirmed for order ${order.id}.`
+            : data.status === "PENDING"
+              ? `Payment is still pending for order ${order.id}.`
+              : `Order ${order.id} is ${String(data.status).toLowerCase()}.`;
+
+        const result = {
+          success: true,
+          status: data.status,
+          orderId: order.id,
+          message,
+          total,
+          currency,
+          items: order.items.map((item) => ({
+            name: item.productName,
+            quantity: item.quantity,
+          })),
+        };
+
+        return {
+          content: [{ type: "text" as const, text: message }],
+          structuredContent: result,
         };
       }
     );
