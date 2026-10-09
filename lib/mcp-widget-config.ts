@@ -32,29 +32,33 @@ export function productWidgetToolMeta() {
   };
 }
 
+
 export function productWidgetResourceMeta(
   widgetDomain: string,
   description: string
 ) {
+  const resourceDomains = [
+    widgetDomain,
+    "res.cloudinary.com",
+  ];
+
   return {
     ui: {
       prefersBorder: true,
       domain: widgetDomain,
       csp: {
         connectDomains: [widgetDomain],
-        resourceDomains: [widgetDomain],
+        resourceDomains,
       },
     },
 
     "openai/widgetDescription": description,
-
     "openai/widgetDomain": widgetDomain,
-
     "openai/widgetPrefersBorder": true,
 
     "openai/widgetCSP": {
       connect_domains: [widgetDomain],
-      resource_domains: [widgetDomain],
+      resource_domains: resourceDomains,
       redirect_domains: [
         "checkout.stripe.com",
       ],
