@@ -39,7 +39,7 @@ export function productWidgetResourceMeta(
 ) {
   const resourceDomains = [
     widgetDomain,
-    "res.cloudinary.com",
+    "https://res.cloudinary.com",
   ];
 
   return {
@@ -59,9 +59,9 @@ export function productWidgetResourceMeta(
     "openai/widgetCSP": {
       connect_domains: [widgetDomain],
       resource_domains: resourceDomains,
-      redirect_domains: [
-        "checkout.stripe.com",
-      ],
+      redirect_domains: ["checkout.stripe.com"],
     },
   };
 }
+
+
