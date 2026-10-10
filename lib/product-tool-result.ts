@@ -1,4 +1,5 @@
 import type { Product } from "./products";
+import { getAppOrigin, getWidgetCsp } from "./mcp-widget-config";
 
 export function buildProductToolResult(products: Product[], label: string) {
   const structuredContent = {
@@ -6,6 +7,8 @@ export function buildProductToolResult(products: Product[], label: string) {
     label,
     products,
   };
+
+  const { csp, openaiCsp } = getWidgetCsp(getAppOrigin());
 
   return {
     content: [
@@ -17,6 +20,8 @@ export function buildProductToolResult(products: Product[], label: string) {
     structuredContent,
     _meta: {
       products,
+      ui: { csp },
+      "openai/widgetCSP": openaiCsp,
     },
   };
 }

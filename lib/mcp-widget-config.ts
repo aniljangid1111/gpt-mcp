@@ -19,48 +19,76 @@ export function getAppOrigin() {
   return origin.replace(/\/$/, "");
 }
 
-export function productWidgetToolMeta() {
+export function getWidgetCsp(widgetDomain: string) {
+  const rawDomains = [
+    widgetDomain,
+    "https://res.cloudinary.com",
+    "https://images-static.nykaa.com",
+    "https://encrypted-tbn1.gstatic.com",
+  ];
+
+  // OpenAI strictly requires valid HTTPS origins (rejects insecure http:// or invalid hosts)
+  const httpsResourceDomains = Array.from(
+    new Set(
+      rawDomains
+        .filter((d): d is string => typeof d === "string" && d.startsWith("https://"))
+        .map((d) => d.replace(/\/$/, ""))
+    )
+  );
+
+  const connectDomains = httpsResourceDomains.filter(
+    (d) => !d.includes("cloudinary") && !d.includes("gstatic") && !d.includes("nykaa")
+  );
+
+  return {
+    csp: {
+      connectDomains: connectDomains.length > 0 ? connectDomains : httpsResourceDomains,
+      resourceDomains: httpsResourceDomains,
+    },
+    openaiCsp: {
+      connect_domains: connectDomains.length > 0 ? connectDomains : httpsResourceDomains,
+      resource_domains: httpsResourceDomains,
+      redirect_domains: ["checkout.stripe.com"],
+    },
+  };
+}
+
+export function productWidgetToolMeta(widgetDomain: string = getAppOrigin()) {
+  const { csp, openaiCsp } = getWidgetCsp(widgetDomain);
+
   return {
     ui: {
       resourceUri: PRODUCT_WIDGET_URI,
       visibility: ["model", "app"],
+      domain: widgetDomain.startsWith("https://") ? widgetDomain : undefined,
+      csp,
     },
     "openai/outputTemplate": PRODUCT_WIDGET_URI,
     "openai/widgetAccessible": true,
     "openai/toolInvocation/invoking": "Loading products",
     "openai/toolInvocation/invoked": "Products loaded",
+    "openai/widgetCSP": openaiCsp,
   };
 }
-
 
 export function productWidgetResourceMeta(
   widgetDomain: string,
   description: string
 ) {
-  const resourceDomains = [
-    widgetDomain,
-    "https://res.cloudinary.com",
-  ];
+  const { csp, openaiCsp } = getWidgetCsp(widgetDomain);
 
   return {
     ui: {
       prefersBorder: true,
-      domain: widgetDomain,
-      csp: {
-        connectDomains: [widgetDomain],
-        resourceDomains,
-      },
+      domain: widgetDomain.startsWith("https://") ? widgetDomain : undefined,
+      csp,
     },
 
     "openai/widgetDescription": description,
     "openai/widgetDomain": widgetDomain,
     "openai/widgetPrefersBorder": true,
 
-    "openai/widgetCSP": {
-      connect_domains: [widgetDomain],
-      resource_domains: resourceDomains,
-      redirect_domains: ["checkout.stripe.com"],
-    },
+    "openai/widgetCSP": openaiCsp,
   };
 }
 
