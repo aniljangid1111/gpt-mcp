@@ -520,6 +520,36 @@ export function createProductWidgetHtml() {
           quantity: 1,
         });
       }
+        
+        async function buyProduct(productIndex) {
+          await addProductToCart(productIndex);
+
+          const cartId = currentCart?.id || getStoredCartId();
+
+          if (!cartId) {
+            throw new Error("Cart ID was not returned.");
+          }
+
+          const result = await callTool("checkout_cart", { cartId });
+
+          const url =
+            result?.structuredContent?.url ||
+            result?.url ||
+            result?._meta?.url;
+
+          if (!url) {
+            throw new Error("Checkout URL was not returned.");
+          }
+
+          if (window.openai?.openExternal) {
+            await window.openai.openExternal({
+              href: url,
+              redirectUrl: false,
+            });
+          } else {
+            window.location.href = url;
+          }
+        }
 
       async function updateLine(lineIndex, quantity) {
         const line = currentCart?.lines?.[lineIndex];
@@ -591,8 +621,7 @@ const productUrl = escapeHtml(product.productUrl || "#");
               '<p class="detail-description">' + description + '</p>' +
               '<div class="tags">' + tags.map((tag) => '<span class="tag">' + escapeHtml(tag) + '</span>').join("") + '</div>' +
               '<div><span class="price">' + money(product.price) + '</span></div>' +
-              '<div class="detail-actions"><a href="' + productUrl + '" target="_blank" rel="noopener noreferrer">View product</a><button class="action-button primary-action" type="button" data-add-index="0">Add to Cart</button></div>' +
-            '</div>' +
+              '<div class="detail-actions"><button class="action-button" type="button" data-buy-index="0">Buy Product</button><button class="action-button primary-action" type="button" data-add-index="0">Add to Cart</button></div>' +            '</div>' +
           '</section>';
 
         for (const image of root.querySelectorAll("img")) {
@@ -725,6 +754,24 @@ const productUrl = escapeHtml(product.productUrl || "#");
 }
 
       function bindActions() {
+  
+  // Buy Product: add item and open checkout
+  for (const button of root.querySelectorAll("button[data-buy-index]")) {
+    button.addEventListener("click", async () => {
+      try {
+        button.disabled = true;
+        button.textContent = "Preparing checkout...";
+
+        await buyProduct(Number(button.dataset.buyIndex));
+      } catch (error) {
+        console.error("Buy Product error:", error);
+        button.disabled = false;
+        button.textContent = "Buy Product";
+      }
+    });
+  }
+
+
   // Add to Cart
   for (const button of root.querySelectorAll(
     "button[data-add-index]"
@@ -929,7 +976,7 @@ const productUrl = escapeHtml(product.productUrl || "#");
                     '<div class="content">' +
                       '<div><h2>' + title + '</h2><p class="brand">' + brand + '</p></div>' +
                       '<div class="tags">' + tags.map((tag) => '<span class="tag">' + escapeHtml(tag) + '</span>').join("") + '</div>' +
-                      '<div class="footer"><span class="price">' + money(product.price) + '</span><div class="actions"><a href="' + productUrl + '" target="_blank" rel="noopener noreferrer">View</a><button class="action-button primary-action" type="button" data-add-index="' + index + '">Add to Cart</button></div></div>' +
+                      '<div class="footer"><span class="price">' + money(product.price) + '</span><div class="actions"><button class="action-button" type="button" data-buy-index="' + index + '">Buy Product</button><button class="action-button primary-action" type="button" data-add-index="' + index + '">Add to Cart</button></div></div>' +
                     '</div>' +
                   '</article>';
                 }).join("") +

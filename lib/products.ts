@@ -79,34 +79,39 @@ export function isCatalogWideQuery(query?: string): boolean {
   );
 }
 
-export async function listAllProducts(limit = 50): Promise<Product[]> {
-  const response = await fetch(`${process.env.ADMIN_API_URL}/api/products`, {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch products from Admin API");
-  }
+export async function listAllProducts(): Promise<Product[]> {
+  const response = await fetch(
+    `${process.env.ADMIN_API_URL}/api/products`,
+    { cache: "no-store" }
+  );
 
   const data = await response.json();
 
-  const products: AdminProduct[] = data.products || [];
+  if (
+    !response.ok ||
+    data.success !== true ||
+    !Array.isArray(data.products)
+  ) {
+    throw new Error("Failed to fetch products from Admin API");
+  }
 
-  return products
-    .slice(0, limit)
-    .map(mapAdminProduct);
+  return (data.products as AdminProduct[]).map(mapAdminProduct);
 }
+
 
 export async function searchProducts(
   search: string,
-  limit = 50
+  limit?: number
 ): Promise<Product[]> {
   const query = search.trim().toLowerCase();
 
-  const allProducts = await listAllProducts(50);
+  // Fetch all products from your Admin API catalog
+  const allProducts = await listAllProducts();
 
   if (!query) {
-    return allProducts.slice(0, limit);
+    return typeof limit === "number"
+      ? allProducts.slice(0, limit)
+      : allProducts;
   }
 
   const products = allProducts.filter((product) => {
@@ -123,7 +128,9 @@ export async function searchProducts(
     return searchableText.includes(query);
   });
 
-  return products.slice(0, limit);
+  return typeof limit === "number"
+    ? products.slice(0, limit)
+    : products;
 }
 
 export async function getProducts(query?: string): Promise<Product[]> {
@@ -134,10 +141,13 @@ export async function getProducts(query?: string): Promise<Product[]> {
   return searchProducts(query!.trim());
 }
 
+
 export async function getFeaturedProducts(
   limit = 8
 ): Promise<Product[]> {
-  return listAllProducts(limit);
+  const products = await listAllProducts();
+
+  return products.slice(0, limit);
 }
 
 export async function getProductsUnderPrice(
@@ -217,14 +227,15 @@ function matchesFilter(
   return true;
 }
 
+
 export async function filterProducts(
   filter: ProductFilter
 ): Promise<Product[]> {
   const limit = filter.limit ?? 12;
 
   const candidates = filter.query?.trim()
-    ? await searchProducts(filter.query.trim(), 50)
-    : await listAllProducts(50);
+    ? await searchProducts(filter.query.trim())
+    : await listAllProducts();
 
   return candidates
     .filter((product) => matchesFilter(product, filter))
