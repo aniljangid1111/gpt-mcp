@@ -172,6 +172,9 @@ const productOutputSchema = z.object({
       checkoutUrl: z.string(),
       variantId: z.string(),
       variantGid: z.string(),
+      specifications: z.string().optional(),
+      documentUrl: z.string().nullable().optional(),
+      documentName: z.string().nullable().optional(),
     })
   ),
 });
@@ -417,6 +420,14 @@ const handler = createMcpHandler(
       "Find a product and show a checkout-ready card with a direct cart checkout action.",
       requiredQuerySchema,
       async (args) => runCheckoutTool(args.query as string)
+    );
+
+    registerProductTool(
+      "get_product_specifications",
+      "Get Product Specifications",
+      "Get complete battery specifications, voltage, capacity, cycle life, dimensions, weight, charging parameters, and suitable applications extracted from documents.",
+      requiredQuerySchema,
+      async (args) => runProductTool(args.query as string)
     );
 
     server.registerTool(

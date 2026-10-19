@@ -1,4 +1,3 @@
-
 export type Product = {
   id: string;
   title: string;
@@ -13,6 +12,9 @@ export type Product = {
   checkoutUrl: string;
   variantId: string;
   variantGid: string;
+  specifications?: string;
+  documentUrl?: string | null;
+  documentName?: string | null;
 };
 
 type AdminProduct = {
@@ -22,6 +24,9 @@ type AdminProduct = {
   imageUrl: string | null;
   content: string;
   documentUrl: string | null;
+  documentName?: string | null;
+  specifications?: string | null;
+  pdfText?: string | null;
 };
 
 function mapAdminProduct(product: AdminProduct): Product {
@@ -30,10 +35,15 @@ function mapAdminProduct(product: AdminProduct): Product {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 
+  // Combine product description with extracted PDF specifications directly from database
+  const fullDescription = product.specifications
+    ? `${product.content}\n\nTechnical Specifications:\n${product.specifications}`
+    : product.content;
+
   return {
     id: product.id,
     title: product.name,
-    description: product.content,
+    description: fullDescription,
     brand: "Cleanergy",
     tags: [],
     image: product.imageUrl || "",
@@ -44,6 +54,9 @@ function mapAdminProduct(product: AdminProduct): Product {
     checkoutUrl: `/products/${handle}`,
     variantId: product.id,
     variantGid: `local:${product.id}`,
+    specifications: product.specifications || undefined,
+    documentUrl: product.documentUrl || null,
+    documentName: product.documentName || null,
   };
 }
 
