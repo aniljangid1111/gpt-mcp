@@ -149,6 +149,17 @@ export default async function CheckoutPage({
       );
     }
 
+    // STRICT SECURITY: Only show success screen if status and payment are verified PAID
+    if (result.status !== "PAID" || result.order.payment?.status !== "PAID") {
+      return (
+        <MessagePage
+          title="Payment not confirmed"
+          message={`Order ${result.order.id} payment could not be confirmed as paid. Please complete checkout or contact support.`}
+          color="#b45309"
+        />
+      );
+    }
+
     const order = result.order;
     const address = [
       order.addressLine1,
