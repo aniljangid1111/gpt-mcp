@@ -17,7 +17,7 @@ type InvoiceDownloadButtonProps = {
   customerName?: string | null;
   customerEmail?: string | null;
   customerPhone?: string | null;
-  address: string;
+  address?: string | null;
   items: InvoiceItem[];
 };
 
@@ -69,17 +69,19 @@ export default function InvoiceDownloadButton({
 
       y += 7;
       pdf.setFontSize(10);
-      pdf.text(`Name: ${customerName || "Not provided"}`, 15, y);
+      pdf.text(`Name: ${customerName || "Entered at checkout"}`, 15, y);
 
       y += 6;
-      pdf.text(`Email: ${customerEmail || "Not provided"}`, 15, y);
+      pdf.text(`Email: ${customerEmail || "Confirmed via Stripe receipt"}`, 15, y);
 
-      y += 6;
-      pdf.text(`Phone: ${customerPhone || "Not provided"}`, 15, y);
+      if (customerPhone) {
+        y += 6;
+        pdf.text(`Phone: ${customerPhone}`, 15, y);
+      }
 
       y += 6;
       const addressLines = pdf.splitTextToSize(
-        `Address: ${address || "Not provided"}`,
+        `Shipping: ${address || "Provided securely during Stripe Checkout"}`,
         175
       );
       pdf.text(addressLines, 15, y);

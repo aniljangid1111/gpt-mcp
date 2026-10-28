@@ -1,5 +1,7 @@
 
+import Link from "next/link";
 import { getCart } from "@/lib/cart";
+import { getAdminApiUrl } from "@/lib/mcp-widget-config";
 import StripeButton from "./StripeButton";
 import type { CSSProperties } from "react";
 import InvoiceDownloadButton from "./InvoiceDownloadButton";
@@ -64,7 +66,7 @@ function MessagePage({
         <div style={{ ...styles.statusIcon, color }}>{title === "Payment successful" ? "✓" : "!"}</div>
         <h1 style={styles.heading}>{title}</h1>
         <p style={styles.muted}>{message}</p>
-        <a href="/" style={styles.button}>Continue shopping</a>
+        <Link href="/" style={styles.button}>Continue shopping</Link>
       </section>
     </main>
   );
@@ -74,7 +76,7 @@ async function getVerifiedOrder(
   orderId: string,
   sessionId: string
 ): Promise<OrderResult | null> {
-  const adminUrl = process.env.ADMIN_API_URL?.replace(/\/$/, "");
+  const adminUrl = getAdminApiUrl();
   if (!adminUrl) return null;
 
   try {
@@ -221,12 +223,20 @@ export default async function CheckoutPage({
             <strong>{money(order.totalAmount, order.currency)}</strong>
           </div>
 
-          <h2 style={styles.subheading}>Customer details</h2>
+          <h2 style={styles.subheading}>Fulfillment & Confirmation</h2>
           <div style={styles.details}>
-            <p style={styles.customerLine}><strong>Name:</strong> {order.customerName || "Not provided"}</p>
-            <p style={styles.customerLine}><strong>Email:</strong> {order.customerEmail || "Not provided"}</p>
-            <p style={styles.customerLine}><strong>Mobile:</strong> {order.customerPhone || "Not provided"}</p>
-            <p style={styles.customerLine}><strong>Address:</strong> {address || "Not provided"}</p>
+            <p style={styles.customerLine}>
+              <strong>Confirmation:</strong> An automated confirmation receipt has been sent to your checkout email.
+            </p>
+            <p style={styles.customerLine}>
+              <strong>Fulfillment:</strong> Preparing shipment to the delivery address provided during checkout.
+            </p>
+            {order.customerName ? (
+              <p style={styles.customerLine}><strong>Recipient:</strong> {order.customerName}</p>
+            ) : null}
+            {address ? (
+              <p style={styles.customerLine}><strong>Address:</strong> {address}</p>
+            ) : null}
           </div>
 
           <div style={styles.paidBadge}>Payment status: PAID</div>
@@ -239,15 +249,15 @@ export default async function CheckoutPage({
             orderId={order.id}
             currency={order.currency}
             totalAmount={order.totalAmount}
-            customerName={order.customerName}
-            customerEmail={order.customerEmail}
-            customerPhone={order.customerPhone}
-            address={address}
+            customerName={order.customerName || null}
+            customerEmail={order.customerEmail || null}
+            customerPhone={order.customerPhone || null}
+            address={address || null}
             items={order.items}
           />
 
           <p style={styles.closeNote}>
-            Keep your invoice for your records. You can close this page when you're done.
+            Keep your invoice for your records. You can close this page when you&apos;re done.
           </p>
         </section>
       </main>

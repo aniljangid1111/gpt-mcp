@@ -1,3 +1,5 @@
+import { getAdminApiUrl, getMcpBaseUrl } from "./mcp-widget-config";
+
 export type Product = {
   id: string;
   title: string;
@@ -19,42 +21,51 @@ export type Product = {
 
 type AdminProduct = {
   id: string;
-  name: string;
-  price: string | number;
-  imageUrl: string | null;
-  content: string;
-  documentUrl: string | null;
+  name?: string | null;
+  price?: string | number | null;
+  imageUrl?: string | null;
+  content?: string | null;
+  documentUrl?: string | null;
   documentName?: string | null;
   specifications?: string | null;
   pdfText?: string | null;
 };
 
 function mapAdminProduct(product: AdminProduct): Product {
-  const handle = product.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+  const title = (product.name || "").trim() || "Cleanergy Battery";
+  const handle =
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "cleanergy-battery";
 
-  // Combine product description with extracted PDF specifications directly from database
-  const fullDescription = product.specifications
-    ? `${product.content}\n\nTechnical Specifications:\n${product.specifications}`
-    : product.content;
+  const content = (product.content || "").trim();
+  const specifications = product.specifications?.trim() || undefined;
+
+  // Combine product description with extracted PDF specifications directly from database if available
+  const fullDescription = specifications
+    ? (content ? `${content}\n\nTechnical Specifications:\n${specifications}` : `Technical Specifications:\n${specifications}`)
+    : content;
+
+  const rawPrice = Number(product.price);
+  const price = !isNaN(rawPrice) && rawPrice >= 0 ? rawPrice.toFixed(2) : "0.00";
+  const baseUrl = getMcpBaseUrl();
 
   return {
-    id: product.id,
-    title: product.name,
+    id: String(product.id || ""),
+    title,
     description: fullDescription,
     brand: "Cleanergy",
     tags: [],
     image: product.imageUrl || "",
     images: product.imageUrl ? [product.imageUrl] : [],
-    price: String(product.price),
+    price,
     handle,
-    productUrl: `/products/${handle}`,
-    checkoutUrl: `/products/${handle}`,
-    variantId: product.id,
-    variantGid: `local:${product.id}`,
-    specifications: product.specifications || undefined,
+    productUrl: `${baseUrl}/products/${handle}`,
+    checkoutUrl: `${baseUrl}/products/${handle}`,
+    variantId: String(product.id || ""),
+    variantGid: `local:${product.id || ""}`,
+    specifications,
     documentUrl: product.documentUrl || null,
     documentName: product.documentName || null,
   };
@@ -93,36 +104,38 @@ export function isCatalogWideQuery(query?: string): boolean {
 }
 
 export async function listAllProducts(): Promise<Product[]> {
-  const response = await fetch(
-    `${process.env.ADMIN_API_URL}/api/products`,
-    { cache: "no-store" }
-  );
+  const adminApiUrl = getAdminApiUrl();
+  const response = await fetch(`${adminApiUrl}/api/products`, {
+    cache: "no-store",
+  });
 
-  const data = await response.json();
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    throw new Error(
+      errorData?.message || errorData?.error || "Failed to fetch products from Admin backend"
+    );
+  }
 
-  if (
-    !response.ok ||
-    data.success !== true ||
-    !Array.isArray(data.products)
-  ) {
-    throw new Error("Failed to fetch products from Admin API");
+  const data = await response.json().catch(() => null);
+
+  if (!data || data.success !== true || !Array.isArray(data.products)) {
+    throw new Error("Malformed response from Admin products endpoint");
   }
 
   return (data.products as AdminProduct[]).map(mapAdminProduct);
 }
 
-
 export async function searchProducts(
   search: string,
   limit?: number
 ): Promise<Product[]> {
-  const query = search.trim().toLowerCase();
+  const query = (search || "").trim().toLowerCase();
 
-  // Fetch all products from your Admin API catalog
+  // Fetch all products from Admin API catalog
   const allProducts = await listAllProducts();
 
-  if (!query) {
-    return typeof limit === "number"
+  if (!query || isCatalogWideQuery(query)) {
+    return typeof limit === "number" && limit > 0
       ? allProducts.slice(0, limit)
       : allProducts;
   }
@@ -133,7 +146,7 @@ export async function searchProducts(
       product.description,
       product.brand,
       product.handle,
-      ...product.tags,
+      ...(product.tags || []),
     ]
       .join(" ")
       .toLowerCase();
@@ -141,7 +154,7 @@ export async function searchProducts(
     return searchableText.includes(query);
   });
 
-  return typeof limit === "number"
+  return typeof limit === "number" && limit > 0
     ? products.slice(0, limit)
     : products;
 }
@@ -154,22 +167,24 @@ export async function getProducts(query?: string): Promise<Product[]> {
   return searchProducts(query!.trim());
 }
 
-
-export async function getFeaturedProducts(
-  limit = 8
-): Promise<Product[]> {
+export async function getFeaturedProducts(limit = 8): Promise<Product[]> {
   const products = await listAllProducts();
-
-  return products.slice(0, limit);
+  return products.slice(0, Math.max(1, limit));
 }
 
 export async function getProductsUnderPrice(
   maxPrice: number
 ): Promise<Product[]> {
+  if (typeof maxPrice !== "number" || isNaN(maxPrice) || maxPrice <= 0) {
+    return [];
+  }
   const products = await listAllProducts();
 
   return products
-    .filter((product) => Number(product.price) <= maxPrice)
+    .filter((product) => {
+      const price = Number(product.price);
+      return !isNaN(price) && price <= maxPrice;
+    })
     .slice(0, 8);
 }
 
@@ -191,13 +206,13 @@ function matchesFilter(
   const vendor = filter.vendor?.trim().toLowerCase();
   const price = Number(product.price);
 
-  if (query) {
+  if (query && !isCatalogWideQuery(query)) {
     const searchableText = [
       product.title,
       product.description,
       product.brand,
       product.handle,
-      product.tags.join(" "),
+      ...(product.tags || []),
     ]
       .join(" ")
       .toLowerCase();
@@ -209,7 +224,7 @@ function matchesFilter(
 
   if (
     tag &&
-    !product.tags.some(
+    !(product.tags || []).some(
       (productTag) => productTag.toLowerCase() === tag
     )
   ) {
@@ -225,14 +240,16 @@ function matchesFilter(
 
   if (
     typeof filter.maxPrice === "number" &&
-    price > filter.maxPrice
+    !isNaN(filter.maxPrice) &&
+    (isNaN(price) || price > filter.maxPrice)
   ) {
     return false;
   }
 
   if (
     typeof filter.minPrice === "number" &&
-    price < filter.minPrice
+    !isNaN(filter.minPrice) &&
+    (isNaN(price) || price < filter.minPrice)
   ) {
     return false;
   }
@@ -240,17 +257,13 @@ function matchesFilter(
   return true;
 }
 
-
 export async function filterProducts(
   filter: ProductFilter
 ): Promise<Product[]> {
-  const limit = filter.limit ?? 12;
+  const limit = typeof filter.limit === "number" && filter.limit > 0 ? filter.limit : 12;
+  const allProducts = await listAllProducts();
 
-  const candidates = filter.query?.trim()
-    ? await searchProducts(filter.query.trim())
-    : await listAllProducts();
-
-  return candidates
+  return allProducts
     .filter((product) => matchesFilter(product, filter))
     .slice(0, limit);
 }
@@ -258,15 +271,17 @@ export async function filterProducts(
 export async function getProductsByTag(
   tag: string
 ): Promise<Product[]> {
-  const normalizedTag = tag.trim().toLowerCase();
+  const normalizedTag = (tag || "").trim().toLowerCase();
+  if (!normalizedTag) {
+    return [];
+  }
 
   const products = await listAllProducts();
 
   return products
     .filter((product) =>
-      product.tags.some(
-        (productTag) =>
-          productTag.toLowerCase() === normalizedTag
+      (product.tags || []).some(
+        (productTag) => productTag.toLowerCase() === normalizedTag
       )
     )
     .slice(0, 8);
@@ -282,25 +297,29 @@ export async function getRecommendedProducts(
   const products = await getProducts(seed);
   const seedProduct = products[0];
 
-  if (!seedProduct?.tags.length) {
+  if (!seedProduct) {
+    return getFeaturedProducts(8);
+  }
+
+  if (!seedProduct.tags?.length) {
     return products.slice(0, 8);
   }
 
   const catalog = await listAllProducts();
 
   const seedTags = new Set(
-    seedProduct.tags.map((tag) => tag.toLowerCase())
+    seedProduct.tags.map((t) => t.toLowerCase())
   );
 
   return catalog
     .filter((product) => product.id !== seedProduct.id)
     .sort((left, right) => {
-      const leftScore = left.tags.filter((tag) =>
-        seedTags.has(tag.toLowerCase())
+      const leftScore = (left.tags || []).filter((t) =>
+        seedTags.has(t.toLowerCase())
       ).length;
 
-      const rightScore = right.tags.filter((tag) =>
-        seedTags.has(tag.toLowerCase())
+      const rightScore = (right.tags || []).filter((t) =>
+        seedTags.has(t.toLowerCase())
       ).length;
 
       return rightScore - leftScore;
@@ -312,6 +331,5 @@ export async function getProductForCheckout(
   query: string
 ): Promise<Product | undefined> {
   const products = await getProducts(query);
-
   return products[0];
 }

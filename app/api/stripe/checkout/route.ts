@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
+import { getAdminApiUrl } from "@/lib/mcp-widget-config";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const adminApiUrl = getAdminApiUrl();
 
     const response = await fetch(
-      `${process.env.ADMIN_API_URL}/api/stripe/checkout`,
+      `${adminApiUrl}/api/stripe/checkout`,
       {
         method: "POST",
         headers: {

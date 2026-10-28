@@ -1,6 +1,7 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import {
+  getAdminApiUrl,
   getAppOrigin,
   productWidgetResourceMeta,
   productWidgetToolMeta,
@@ -312,7 +313,7 @@ const handler = createMcpHandler(
     registerProductTool(
       "list_all_products",
       "List All Products",
-      "List the full local catalog in an interactive grid widget. Use when the user asks to show all products.",
+      "List the full catalog in an interactive grid widget. Use when the user asks to show all products.",
       z.object({}),
       async () => runProductTool()
     );
@@ -417,7 +418,7 @@ const handler = createMcpHandler(
     registerProductTool(
       "create_checkout_link",
       "Create Checkout Link",
-      "Find a product and show a checkout-ready card with a direct cart checkout action.",
+      "Find a product and show a checkout-ready product card with direct checkout actions.",
       requiredQuerySchema,
       async (args) => runCheckoutTool(args.query as string)
     );
@@ -517,6 +518,7 @@ const handler = createMcpHandler(
         outputSchema: cartOutputSchema,
         annotations: {
           readOnlyHint: false,
+          destructiveHint: true,
         },
         _meta: widgetMeta,
       },
@@ -550,13 +552,7 @@ const handler = createMcpHandler(
         },
       },
       async (args) => {
-        const adminApiUrl = process.env.ADMIN_API_URL;
-
-        if (!adminApiUrl) {
-          throw new Error(
-            "ADMIN_API_URL environment variable is missing"
-          );
-        }
+        const adminApiUrl = getAdminApiUrl();
 
         const response = await fetch(
           `${adminApiUrl}/api/stripe/checkout`,
@@ -571,11 +567,12 @@ const handler = createMcpHandler(
           }
         );
 
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
 
-        if (!response.ok) {
+        if (!response.ok || !data?.url) {
           throw new Error(
             data?.error ||
+            data?.message ||
             "Failed to create Stripe checkout session"
           );
         }
@@ -610,15 +607,11 @@ const handler = createMcpHandler(
         _meta: widgetMeta,
       },
       async (args) => {
-        const adminApiUrl = process.env.ADMIN_API_URL;
-
-        if (!adminApiUrl) {
-          throw new Error("ADMIN_API_URL environment variable is missing");
-        }
+        const adminApiUrl = getAdminApiUrl();
 
         const query = new URLSearchParams({
-          orderId: args.orderId,
-          session_id: args.sessionId,
+          orderId: String(args.orderId),
+          session_id: String(args.sessionId),
         });
 
         const response = await fetch(
@@ -626,40 +619,48 @@ const handler = createMcpHandler(
           { cache: "no-store" }
         );
 
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
 
-        if (!response.ok || !data.success || !data.order) {
-          throw new Error(data.error || "Unable to verify payment");
+        if (!response.ok || !data?.success || !data?.order) {
+          throw new Error(data?.error || data?.message || "Unable to verify payment");
         }
 
         const order = data.order;
         const currency = String(order.currency || "usd").toUpperCase();
-        const total = new Intl.NumberFormat("en-US", {
-          style: "currency",
-          currency,
-        }).format(Number(order.totalAmount) / 100);
+        const rawTotal = Number(order.totalAmount);
+        const total = isNaN(rawTotal)
+          ? "$0.00"
+          : new Intl.NumberFormat("en-US", {
+              style: "currency",
+              currency,
+            }).format(rawTotal / 100);
 
+        const status = String(data.status || "PENDING");
         const message =
-          data.status === "PAID"
+          status === "PAID"
             ? `Payment confirmed for order ${order.id}.`
-            : data.status === "PENDING"
+            : status === "PENDING"
               ? `Payment is still pending for order ${order.id}.`
-              : `Order ${order.id} is ${String(data.status).toLowerCase()}.`;
+              : `Order ${order.id} is ${status.toLowerCase()}.`;
+
+        const items = Array.isArray(order.items)
+          ? order.items.map((item: {
+              productName?: string;
+              quantity?: number;
+            }) => ({
+              name: item.productName || "Cleanergy Battery",
+              quantity: typeof item.quantity === "number" ? item.quantity : 1,
+            }))
+          : [];
 
         const result = {
           success: true,
-          status: data.status,
-          orderId: order.id,
+          status,
+          orderId: String(order.id),
           message,
           total,
           currency,
-          items: order.items.map((item: {
-            productName: string;
-            quantity: number;
-          }) => ({
-            name: item.productName,
-            quantity: item.quantity,
-          })),
+          items,
         };
 
         return {
@@ -680,5 +681,16 @@ const handler = createMcpHandler(
   }
 );
 
-export const GET = handler;
-export const POST = handler;
+import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
+
+async function rateLimitedHandler(request: Request) {
+  const clientIp = getClientIp(request);
+  const rateLimit = await checkRateLimit(`mcp:${clientIp}`, 60, 60);
+  if (!rateLimit.success) {
+    return rateLimitResponse(rateLimit);
+  }
+  return handler(request);
+}
+
+export const GET = rateLimitedHandler;
+export const POST = rateLimitedHandler;

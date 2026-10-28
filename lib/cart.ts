@@ -1,3 +1,5 @@
+import { getAdminApiUrl, getMcpBaseUrl } from "./mcp-widget-config";
+
 export type CartLine = {
   id: string;
   merchandiseId: string;
@@ -23,79 +25,86 @@ export type Cart = {
 type AdminCartItem = {
   id: string;
   quantity: number;
-  price: string;
-  product: {
-    id: string;
-    name: string;
-    imageUrl: string | null;
-  };
+  price: string | number;
+  product?: {
+    id?: string;
+    name?: string | null;
+    imageUrl?: string | null;
+  } | null;
 };
 
 type AdminCart = {
   id: string;
   currencyCode: string;
-  total: string;
+  total: string | number;
   totalQuantity: number;
-  items: AdminCartItem[];
+  items?: AdminCartItem[];
 };
 
-const ADMIN_API_URL = process.env.ADMIN_API_URL;
-
-if (!ADMIN_API_URL) {
-  throw new Error("ADMIN_API_URL environment variable is missing");
-}
-
 function mapAdminCart(cart: AdminCart): Cart {
-  return {
-    id: cart.id,
-    checkoutUrl: `${process.env.MCP_BASE_URL}/checkout?cart=${cart.id}`,
-    totalQuantity: cart.totalQuantity,
-    total: String(cart.total),
-    currencyCode: cart.currencyCode,
+  const baseUrl = getMcpBaseUrl();
 
-    lines: cart.items.map((item) => {
-      const handle = item.product.name
+  return {
+    id: String(cart.id),
+    checkoutUrl: `${baseUrl}/checkout?cart=${cart.id}`,
+    totalQuantity: Number(cart.totalQuantity) || 0,
+    total: String(cart.total ?? "0"),
+    currencyCode: String(cart.currencyCode || "USD"),
+
+    lines: (cart.items || []).map((item) => {
+      const productName = (item.product?.name || "").trim() || "Cleanergy Battery";
+      const handle = productName
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "");
+        .replace(/^-|-$/g, "") || "cleanergy-battery";
+
+      const rawPrice = Number(item.price);
+      const price = !isNaN(rawPrice) && rawPrice >= 0 ? rawPrice.toFixed(2) : "0.00";
+      const quantity = Number(item.quantity) || 1;
+      const lineTotal = (!isNaN(rawPrice) ? (rawPrice * quantity).toFixed(2) : "0.00");
 
       return {
-        id: item.id,
-        merchandiseId: item.product.id,
-        title: item.product.name,
+        id: String(item.id),
+        merchandiseId: String(item.product?.id || ""),
+        title: productName,
         variantTitle: "Default",
         handle,
-        image: item.product.imageUrl || "",
-        quantity: item.quantity,
-        price: String(item.price),
-        lineTotal: (
-          Number(item.price) * item.quantity
-        ).toFixed(2),
-        currencyCode: cart.currencyCode,
+        image: item.product?.imageUrl || "",
+        quantity,
+        price,
+        lineTotal,
+        currencyCode: String(cart.currencyCode || "USD"),
       };
     }),
   };
 }
 
-export async function getCart(
-  cartId: string
-): Promise<Cart | null> {
-  const response = await fetch(
-    `${ADMIN_API_URL}/api/cart/${cartId}`,
-    {
-      cache: "no-store",
-    }
-  );
+export async function getCart(cartId: string): Promise<Cart | null> {
+  const cleanId = (cartId || "").trim();
+  if (!cleanId) {
+    return null;
+  }
+
+  const adminApiUrl = getAdminApiUrl();
+  const response = await fetch(`${adminApiUrl}/api/cart/${encodeURIComponent(cleanId)}`, {
+    cache: "no-store",
+  });
 
   if (response.status === 404) {
     return null;
   }
 
   if (!response.ok) {
-    throw new Error("Failed to fetch cart from Admin API");
+    const errorData = await response.json().catch(() => null);
+    throw new Error(
+      errorData?.message || errorData?.error || "Failed to fetch cart from Admin backend"
+    );
   }
 
-  const data = await response.json();
+  const data = await response.json().catch(() => null);
+  if (!data?.cart) {
+    return null;
+  }
 
   return mapAdminCart(data.cart);
 }
@@ -109,37 +118,41 @@ export async function addToCart({
   merchandiseId: string;
   quantity?: number;
 }): Promise<Cart> {
-  if (quantity <= 0) {
-    throw new Error("Quantity must be greater than 0.");
+  const numQuantity = Number(quantity);
+  if (!Number.isInteger(numQuantity) || numQuantity <= 0) {
+    throw new Error("Quantity must be a positive integer.");
   }
 
-  const response = await fetch(
-    `${ADMIN_API_URL}/api/cart`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        cartId,
-        productId: merchandiseId,
-        quantity,
-      }),
-    }
-  );
+  if (!merchandiseId || typeof merchandiseId !== "string") {
+    throw new Error("Product ID is required.");
+  }
+
+  const adminApiUrl = getAdminApiUrl();
+  const response = await fetch(`${adminApiUrl}/api/cart`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      cartId: cartId?.trim() || undefined,
+      productId: merchandiseId.trim(),
+      quantity: numQuantity,
+    }),
+  });
 
   if (!response.ok) {
-    const errorText = await response.text();
-
+    const errorData = await response.json().catch(() => null);
     throw new Error(
-      `Admin Cart API failed (${response.status}): ${errorText}`
+      errorData?.message || errorData?.error || "Failed to add product to cart"
     );
   }
 
-  const data = await response.json();
+  const data = await response.json().catch(() => null);
+  if (!data?.cart) {
+    throw new Error("Invalid cart response received from Admin backend");
+  }
 
   return mapAdminCart(data.cart);
-
 }
 
 export async function updateCartQuantity({
@@ -151,36 +164,44 @@ export async function updateCartQuantity({
   lineId: string;
   quantity: number;
 }): Promise<Cart> {
-  if (quantity <= 0) {
+  const numQuantity = Number(quantity);
+
+  if (numQuantity <= 0) {
     return removeFromCart({
       cartId,
       lineId,
     });
   }
 
+  if (!Number.isInteger(numQuantity)) {
+    throw new Error("Quantity must be a positive integer.");
+  }
+
+  const adminApiUrl = getAdminApiUrl();
   const response = await fetch(
-    `${ADMIN_API_URL}/api/cart/${cartId}/items/${lineId}`,
+    `${adminApiUrl}/api/cart/${encodeURIComponent(cartId.trim())}/items/${encodeURIComponent(lineId.trim())}`,
     {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        quantity,
+        quantity: numQuantity,
       }),
     }
   );
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
-
     throw new Error(
-      errorData?.message ||
-      "Failed to update cart quantity"
+      errorData?.message || errorData?.error || "Failed to update cart quantity"
     );
   }
 
-  const data = await response.json();
+  const data = await response.json().catch(() => null);
+  if (!data?.cart) {
+    throw new Error("Invalid cart response received from Admin backend");
+  }
 
   return mapAdminCart(data.cart);
 }
@@ -192,8 +213,9 @@ export async function removeFromCart({
   cartId: string;
   lineId: string;
 }): Promise<Cart> {
+  const adminApiUrl = getAdminApiUrl();
   const response = await fetch(
-    `${ADMIN_API_URL}/api/cart/${cartId}/items/${lineId}`,
+    `${adminApiUrl}/api/cart/${encodeURIComponent(cartId.trim())}/items/${encodeURIComponent(lineId.trim())}`,
     {
       method: "DELETE",
     }
@@ -201,14 +223,15 @@ export async function removeFromCart({
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
-
     throw new Error(
-      errorData?.message ||
-      "Failed to remove product from cart"
+      errorData?.message || errorData?.error || "Failed to remove product from cart"
     );
   }
 
-  const data = await response.json();
+  const data = await response.json().catch(() => null);
+  if (!data?.cart) {
+    throw new Error("Invalid cart response received from Admin backend");
+  }
 
   return mapAdminCart(data.cart);
 }

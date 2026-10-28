@@ -1,22 +1,49 @@
 export const PRODUCT_WIDGET_URI = "ui://product-catalog/product-widget.html";
 export const WIDGET_MIME_TYPE = "text/html;profile=mcp-app";
 
-export function getAppOrigin() {
+export function getAppOrigin(): string {
   const configuredOrigin =
+    process.env.MCP_BASE_URL ??
     process.env.NEXT_PUBLIC_APP_URL ??
     process.env.APP_URL ??
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
-    process.env.VERCEL_URL;
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined) ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined);
 
   if (!configuredOrigin) {
-    return `${process.env.ADMIN_API_URL}`;
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("MCP_BASE_URL is not configured in production");
+    }
+    return "http://localhost:3001";
   }
 
-  const origin = configuredOrigin.startsWith("http")
-    ? configuredOrigin
-    : `https://${configuredOrigin}`;
+  let origin = configuredOrigin.trim();
+  if (!/^https?:\/\//i.test(origin)) {
+    origin = `https://${origin}`;
+  }
 
-  return origin.replace(/\/$/, "");
+  if (
+    process.env.NODE_ENV === "production" &&
+    origin.startsWith("http://") &&
+    !origin.includes("localhost") &&
+    !origin.includes("127.0.0.1")
+  ) {
+    origin = origin.replace(/^http:\/\//i, "https://");
+  }
+
+  return origin.replace(/\/+$/, "");
+}
+
+export const getMcpBaseUrl = getAppOrigin;
+
+export function getAdminApiUrl(): string {
+  const url = process.env.ADMIN_API_URL;
+  if (!url) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("ADMIN_API_URL environment variable is missing");
+    }
+    return "http://localhost:3000";
+  }
+  return url.trim().replace(/\/+$/, "");
 }
 
 export function getWidgetCsp(widgetDomain: string) {
@@ -32,7 +59,7 @@ export function getWidgetCsp(widgetDomain: string) {
     new Set(
       rawDomains
         .filter((d): d is string => typeof d === "string" && d.startsWith("https://"))
-        .map((d) => d.replace(/\/$/, ""))
+        .map((d) => d.replace(/\/+$/, ""))
     )
   );
 
@@ -85,7 +112,7 @@ export function productWidgetResourceMeta(
     },
 
     "openai/widgetDescription": description,
-    "openai/widgetDomain": widgetDomain,
+    "openai/widgetDomain": widgetDomain.startsWith("https://") ? widgetDomain : undefined,
     "openai/widgetPrefersBorder": true,
 
     "openai/widgetCSP": openaiCsp,
